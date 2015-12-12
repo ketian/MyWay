@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>MyWay</title>
+<style>
+
+    body {
+        font: 10px sans-serif;
+        shape-rendering: crispEdges;
+        margin: 1px auto;
+    }
+
+    .VAColor .c0 {
+        fill: hsl(0, 25%, 50%)
+    }
+
+    .VAColor .c1 {
+        fill: hsl(0, 50%, 50%)
+    }
+
+    .VAColor .c2 {
+        fill: hsl(0, 100%, 50%)
+    }
+
+    .VAColor .c3 {
+        fill: hsl(90, 25%, 50%)
+    }
+
+    .VAColor .c4 {
+        fill: hsl(90, 50%, 50%)
+    }
+
+    .VAColor .c5 {
+        fill: hsl(90, 100%, 50%)
+    }
+
+    .VAColor .c6 {
+        fill: hsl(180, 25%, 50%)
+    }
+
+    .VAColor .c7 {
+        fill: hsl(180, 50%, 50%)
+    }
+
+    .VAColor .c8 {
+        fill: hsl(180, 100%, 50%)
+    }
+
+    h1 {
+        margin-left:auto;
+        margin-right:auto;
+        width:50%;
+    }
+    h2 {
+        position:absolute;
+        bottom: 0px;
+        right: 10px;
+    }
+
+    form {
+        position: absolute;
+        left: 5px;
+        top: 0px;
+    }
+
+    .f0 {
+        position: absolute;
+        left: 30px;
+        top: 30px;
+    }
+
+    .f1 {
+        position: absolute;
+        left: 600px;
+        top: 30px;
+    }
+
+    .f2 {
+        position: absolute;
+        left: 55px;
+        top: 580px;
+    }
+
+    .Hint {
+        font: 18px sans-serif;
+        position: absolute;
+        left: 700px;
+        top: 700px;
+    }
+</style>
+<h1>MyWay: a Visualization Tool for Anormal Driving Style Detection</h1>
+<h2>By Ketian XU</h2>
+<form>
+    <label for="interpolate">Data Source:</label>
+    <select id="interpolate"></select><br>
+</form>
+<p class="Hint">
+    You have selected:
+<textarea style="width: 200px; height: 20px; font: 18px sans-serif;">
+</textarea>
+</p>
+<body>
+<script src="d3/d3.js"></script>
+<script>
+
+    var UN_OP = 0.3;
+
+    var cellSize = 21,
+            offset = 1,
+            width = 1280,
+            height = 800;
+
+    var blocksWidth = (cellSize + offset) * 22,
+            blocksHeight = (cellSize + offset) * 11;
+
+// ========= brush ========
+//    // Clear the previously-active brush, if any.
+//    function brushstart(p) {
+//        if (brush.data !== p) {
+//            cell.call(brush.clear());
+//            brush.x(x[p.x]).y(y[p.y]).data = p;
+//        }
+//    }
+//
+//    // Highlight the selected circles.
+//    function brush(p) {
+//        var e = brush.extent();
+//        svg.selectAll(".cell circle").attr("class", function(d) {
+//            return e[0][0] <= d[p.x] && d[p.x] <= e[1][0]
+//            && e[0][1] <= d[p.y] && d[p.y] <= e[1][1]
+//                    ? d.species : null;
+//        });
+//    }
+//
+//    var brush = d3.svg.brush()
+//            .on("brushstart", brushstart)
+//            .on("brush", brush);
+// ======== brush ========
+
+    var scatterWidth = blocksWidth,
+            scatterHeight = scatterWidth;
+
+    var flag = [];
+
+    var svg = d3.select("body").selectAll("svg")
+            .data(d3.range(0, 3))
+            .enter().append("svg")
+            .attr("class", function(d, i) {return "f"+i;});
+
+    var legendAxisX = d3.svg.axis()
+            .scale(d3.scale.linear().range([0, 3*cellSize+2]))
+            .tickValues(0)
+            .tickSize(2);
+    var legendAxisY = d3.svg.axis()
+            .scale(d3.scale.linear().range([3*cellSize+2, 0]))
+            .tickValues(0)
+            .tickSize(2)
+            .orient("left");
+
+    var scatterScaleX = d3.scale.linear()
+            .range([0,scatterWidth]);
+    var scatterScaleY = d3.scale.linear()
+            .range([scatterHeight,0]);
+    var svgScatter = d3.select(".f0")
+            .attr("width", 580)
+            .attr("height", 540)
+            .append("g")
+            .attr("transform", "translate(30,10)")
+            .attr("width", scatterWidth)
+            .attr("height", scatterHeight);
+    var scatterAxisX, scatterAxisY;
+
+    d3.select("#interpolate")
+            .on("change", change)
+            .selectAll("option")
+            .data([
+                "1000",
+                "1001",
+                "1002",
+                "1003",
+                "1004",
+                "1005",
+                "1006",
+                "1007",
+                "1008",
+                "1009"
+            ])
+            .enter().append("option")
+            .attr("value", function(d) { return d; })
+            .text(function(d) { return d; });
+
+    initLegend();
+    // used to zoom
+    svgScatter.append("rect")
+            .attr("class", "overlay")
+            .attr("width", scatterWidth)
+            .attr("height", scatterHeight)
+            .attr("opacity", 0);
+
+    var dots = svgScatter.selectAll(".dot")
+            .data(d3.range(0, 200))
+            .enter().append("circle");
+    dots.append("title")
+            .text(function(d){return d+1;});
+
+    svgScatter.append("text")
+            .attr("transform", "translate(" + scatterWidth/2 + ","
+            + (scatterHeight+1.5*cellSize) + ")rotate(0)")
+            .style("text-anchor", "middle")
+            .text("Linear Distance & Path Length");
+
+    var svgBlocks = d3.select(".f2")
+            .attr("width", blocksWidth)
+            .attr("height", blocksHeight+5)
+            .append("g")
+            .attr("transform", "translate(" +
+            cellSize + "," + cellSize/2 + ")");
+
+    svgBlocks.append("text")
+            .attr("transform", "translate(" + cellSize*10.5 + "," + cellSize * 11 + ")rotate(0)")
+            .style("text-anchor", "middle")
+            .text("Variance of Acceleration & Average Speed");
+
+    var blocks = svgBlocks.selectAll(".trip")
+            .data(d3.range(0, 200))
+            .enter().append("rect")
+            .attr("class", function(d,i){return "block"+i;})
+            .attr("width", cellSize)
+            .attr("height", cellSize)
+            .attr("x", function (d) {
+                return Math.floor(d / 10) * (cellSize + offset);
+            })
+            .attr("y", function (d) {
+                return d % 10 * (cellSize + offset);
+            })
+            .attr("fill", "white");
+    blocks.append("title")
+            .text(function (d) {
+                return d + 1;
+            });
+
+    var pinlinesWidth = 580,
+            pinlinesHeight = 580,
+            pinlinesMinR = 100,
+            pinlinesMaxR = 250,
+            pinlinesCx = pinlinesWidth/ 2,
+            pinlinesCy = pinlinesHeight / 2;
+    var svgPielines = d3.select(".f1")
+            .attr("width", pinlinesWidth)
+            .attr("height", pinlinesHeight)
+            .append("g")
+            .attr("width", pinlinesWidth)
+            .attr("height", pinlinesHeight)
+            .attr("transform", "translate("+pinlinesCx+","+pinlinesCy+")");
+    var plScale = d3.scale.linear()
+            .range([pinlinesMinR, pinlinesMaxR]);
+    var pieline = d3.svg.line();
+    var pielines = svgPielines.selectAll(".pieline")
+            .data(d3.range(0,200))
+            .enter().append("path");
+    pielines.append("title")
+            .text(function(d){return d+1;});
+    svgPielines.append("text")
+            .attr("transform", "translate(0," + (pinlinesMaxR+10) + ")rotate(0)")
+            .style("text-anchor", "middle")
+            .text("HoA");
+
+// ======== Interaction ========
+
+    blocks.on("mouseover", function (d, i) {
+        whenMouseover(i);
+    })
+            .on("mouseout", function (d, i) {
+                whenMouseout(i);
+            })
+            .on("click", function (d, i) {
+                whenClick(i);
+            });
+
+    dots.on("mouseover", function (d, i) {
+        whenMouseover(i);
+    })
+            .on("mouseout", function (d, i) {
+                whenMouseout(i);
+            })
+            .on("click", function (d, i) {
+                whenClick(i);
+            });
+
+    pielines.on("mouseover", function (d, i) {
+        whenMouseover(i);
+    })
+            .on("mouseout", function (d, i) {
+                whenMouseout(i);
+            })
+            .on("click", function (d, i) {
+                whenClick(i);
+            });
+
+// ======== Read and Draw ========
+
+    var features;
+
+    d3.json("json_1000.json", function (error, root) {
+        if (error) return console.error(error);
+        console.log(root[0]);
+
+        features = root[0];
+
+        blocks.data(features)
+                .transition()
+                .delay(function (d, i) {
+                    return i * 4;
+                })
+                .duration(800)
+                .attr("fill", color);
+//        blocks.data(features)
+//                .attr("fill", color);
+
+        initScale();
+        svgScatter.call(d3.behavior.zoom().x(scatterScaleX).y(scatterScaleY).scaleExtent([1, 8]).on("zoom", zoom));
+        initAxises();
+        svgScatter.append("g")
+                .attr("class", "xAxis")
+                .attr("transform", "translate(0"+","+scatterHeight+")")
+                .call(scatterAxisX)
+                .append("text")
+                .attr("class", "label")
+                .attr("x", scatterWidth)
+                .attr("y", 30)
+                .style("text-anchor", "end")
+                .text("Linear Distance (km)");
+        svgScatter.append("g")
+                .attr("class", "yAxis")
+                .attr("transform", "translate(0"+",0)")
+                .call(scatterAxisY)
+                .append("text")
+                .attr("class", "label")
+                .attr("y", cellSize)
+                .attr("transform", "rotate(-90)")
+                .style("text-anchor", "end")
+                .text("Path Length (km)");
+        dots.data(features)
+                .attr("class", function(d, i){return "dot"+i;})
+                .attr("r", 7.5)
+                .attr("cx", function(d) { return d["l"]; })
+                .attr("cy", function(d) { return d["s"]; })
+                .attr("fill", "white")
+                .transition()
+                .delay(function (d, i) {
+                    return i * 4;
+                })
+                .duration(800)
+                .attr("fill", color)
+                .style("opacity", UN_OP)
+                .attr("transform", transform);
+
+        initPieline();
+        pielines.datum(function(d, i){return features[i]["a_hist"];})
+                .transition()
+                .delay(function (d, i) {
+                    return i * 4;
+                })
+                .duration(800)
+                .attr("d", pieline)
+                .attr("class", function(d, i){return "pieline"+i;});
+
+    });
+
+// ======== Reread and Redraw ========
+    function change() {
+        d3.json("json_"+this.value+".json", function (error, root) {
+            if (error) return console.error(error);
+            console.log(root[0]);
+
+            features = root[0];
+            repaint(root[0]);
+        });
+    }
+
+    function repaint(features) {
+        flag = [];
+
+        blocks.data(features)
+                .transition()
+                .delay(function (d, i) {
+                    return i * 4;
+                })
+                .duration(800)
+                .attr("fill", color)
+                .style("stroke-width", 0);
+//        blocks.data(features)
+//                .attr("fill", color);
+
+        initScale();
+        svgScatter.call(d3.behavior.zoom().x(scatterScaleX).y(scatterScaleY).scaleExtent([1, 8]).on("zoom", zoom));
+        initAxises();
+        svgScatter.select(".xAxis")
+                .call(scatterAxisX);
+        svgScatter.select(".yAxis")
+                .call(scatterAxisY);
+        dots.data(features)
+                .attr("class", function(d, i){return "dot"+i;})
+                .attr("r", 7.5)
+                .attr("cx", function(d) { return d["l"]; })
+                .attr("cy", function(d) { return d["s"]; })
+                .attr("fill", "white")
+                .transition()
+                .delay(function (d, i) {
+                    return i * 4;
+                })
+                .duration(800)
+                .attr("fill", color)
+                .style("opacity", UN_OP)
+                .attr("transform", transform)
+                .style("stroke-width", 0);
+
+        initPieline();
+        pielines.datum(function(d, i){return features[i]["a_hist"];})
+                .transition()
+                .delay(function (d, i) {
+                    return i * 4;
+                })
+                .duration(800)
+                .attr("d", pieline)
+                .attr("class", function(d, i){return "pieline"+i;});
+    }
+
+// ===== ===== ===== ===== functions ===== ===== ===== =====
+
+    function initScale() {
+        scatterScaleX.domain(d3.extent(features, function(d){return d["l"];})).nice();
+        scatterScaleY.domain(d3.extent(features, function(d){return d["s"];})).nice();
+
+        plScale.domain([d3.min(features, function(d){return d3.min(d["a_hist"]);}),
+            d3.max(features, function(d){return d3.max(d["a_hist"]);})]).nice();
+    }
+
+    function initLegend() {
+        var legend = svgScatter.append("g")
+                .attr("class", "legend VAColor")
+                .attr("transform", "translate(" + (scatterWidth - 100)
+                + "," + (scatterHeight - 100) + ")");
+        legend.selectAll(".sample")
+                .data(d3.range(0, 9))
+                .enter().append("rect")
+                .attr("class", function (d, i) {
+                    return "c" + i;
+                })
+                .attr("transform", function (d, i) {
+                    return "translate(" + ((i % 3) * (cellSize))
+                            + "," + (Math.floor(i / 3) * (cellSize)) + ")"
+                })
+                .attr("width", cellSize)
+                .attr("height", cellSize);
+        legend.append("g")
+                .attr("class", "ldg.xAxis")
+                .attr("transform", "translate(-1" + "," + (3 * cellSize) + ")")
+                .call(legendAxisX)
+                .append("text")
+                .attr("class", "label")
+                .attr("x", 2 + 3 * cellSize)
+                .attr("y", 2)
+                .style("text-anchor", "head")
+                .text("High Speed");
+        legend.append("g")
+                .attr("class", "lgd.yAxis")
+                .attr("transform", "translate(0,0)")
+                .call(legendAxisY)
+                .append("text")
+                .attr("class", "label")
+                .attr("x", 2)
+                .attr("y", 0)
+                .style("text-anchor", "middle")
+                .text("Aggressive");
+
+    }
+
+    function initAxises() {
+        scatterAxisX = d3.svg.axis()
+                .scale(scatterScaleX)
+                .outerTickSize(1)
+                .orient("bottom");
+        scatterAxisY = d3.svg.axis()
+                .scale(scatterScaleY)
+                .outerTickSize(1)
+                .orient("left");
+    }
+
+    function initPieline() {
+        pieline.x(function(d, i) {
+            return Math.cos((15+i*30)/180*Math.PI)*plScale(d);
+        })
+                .y(function(d, i) {
+                    return Math.sin((15+i*30)/180*Math.PI)*plScale(d);
+                })
+                .interpolate("cardinal-closed");
+        pielines.style("fill", "none")
+                .style("stroke", color)
+                .style("stroke-width", 1.5)
+                .style("opacity", UN_OP);
+    }
+
+    function zoom() {
+        dots.attr("transform", transform);
+
+        svgScatter.select(".xAxis").call(scatterAxisX);
+        svgScatter.select(".yAxis").call(scatterAxisY);
+    }
+
+    function transform(d, i) {
+        return "translate(" + scatterScaleX(features[i]["l"]) + "," + scatterScaleY(features[i]["s"]) + ")";
+    }
+
+
+//    function color(d) {
+//        return d3.hsl(d.a_var, d.v_ave, 0.5);
+//    }
+
+    function color(d, i) {
+        return d3.hsl(features[i]["a_var"], features[i]["v_ave"], 0.5);
+    }
+
+    function whenMouseover(i){
+        if (flag.indexOf(i) == -1) {
+            svgBlocks.select(".block"+i)
+                    .style("stroke", "gray")
+                    .style("stroke-width", 2);
+            svgScatter.select(".dot"+i)
+                    .style("stroke", "gray")
+                    .style("stroke-width", 2)
+                    .style("opacity", 1);
+            svgPielines.select(".pieline"+i)
+                    .style("stroke-width", 5)
+                    .style("opacity", 1);
+        }
+    }
+
+    function whenMouseout(i) {
+        if (flag.indexOf(i) == -1) {
+            svgBlocks.select(".block"+i)
+                    .transition()
+                    .duration(100)
+                    .style("stroke", "white")
+                    .style("stroke-width", 0);
+            svgScatter.select(".dot"+i)
+                    .style("stroke", "white")
+                    .style("stroke-width", 0)
+                    .style("opacity", UN_OP);
+            svgPielines.select(".pieline"+i)
+                    .style("stroke-width", 1.5)
+                    .style("opacity", UN_OP);
+        }
+    }
+
+    function whenClick(i) {
+        if (flag.indexOf(i) > -1) {
+            flag.splice(flag.indexOf(i), 1);
+            svgBlocks.select(".block"+i)
+                    .transition()
+                    .duration(100)
+                    .style("stroke-width", 0);
+            svgScatter.select(".dot"+i)
+                    .style("stroke-width", 0)
+                    .style("opacity", UN_OP);
+            svgPielines.select(".pieline"+i)
+                    .style("stroke-width", 1.5)
+                    .style("opacity", UN_OP);
+        } else {
+            flag.push(i);
+            svgBlocks.select(".block"+i)
+                    .transition()
+                    .duration(100)
+                    .style("stroke", "purple")
+                    .style("stroke-width", 2);
+            svgScatter.select(".dot"+i)
+                    .style("stroke", "purple")
+                    .style("stroke-width", 2)
+                    .style("opacity", 1);
+            svgPielines.select(".pieline"+i)
+                    .style("stroke-width", 5)
+                    .style("opacity", 1);
+        }
+        d3.select("textarea").text(flag);
+    }
+</script>
